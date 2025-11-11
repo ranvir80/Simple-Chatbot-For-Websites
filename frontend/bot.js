@@ -2,8 +2,7 @@
   'use strict';
   
   // ===== CONFIGURATION =====
-  // Change this to your production server URL when deploying
-  const API_ENDPOINT = window.CHATBOT_CONFIG?.apiEndpoint || 'http://localhost:3000/api/chat';
+  const API_ENDPOINT = 'https://ranvirwebbot.onrender.com/api/chat';
   const STORAGE_KEY_USER = 'chatbot_user_data';
   const STORAGE_KEY_CHAT_PREFIX = 'chatbot_chat_';
   
@@ -11,6 +10,7 @@
   let userData = null;
   let chatHistory = [];
   let isOpen = false;
+  let floatingMessageInterval = null;
   
   // ===== STYLES =====
   const styles = `
@@ -20,10 +20,15 @@
       padding: 0;
     }
     
-    .chatbot-button {
+    .chatbot-button-wrapper {
       position: fixed;
       bottom: 20px;
       left: 20px;
+      z-index: 9998;
+    }
+    
+    .chatbot-button {
+      position: relative;
       width: 60px;
       height: 60px;
       border-radius: 50%;
@@ -36,7 +41,7 @@
       align-items: center;
       justify-content: center;
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      z-index: 9998;
+      z-index: 2;
       transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
     
@@ -47,6 +52,66 @@
     
     .chatbot-button:active {
       transform: scale(1.05);
+    }
+    
+    /* Wave pulse rings - softer and longer */
+    .chatbot-pulse-ring {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(0, 0, 0, 0.15);
+      animation: pulseRing 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      z-index: 1;
+    }
+    
+    .chatbot-pulse-ring:nth-child(2) {
+      animation-delay: 1.3s;
+    }
+    
+    .chatbot-pulse-ring:nth-child(3) {
+      animation-delay: 2.6s;
+    }
+    
+    @keyframes pulseRing {
+      0% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 0.5;
+      }
+      50% {
+        opacity: 0.2;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(3);
+        opacity: 0;
+      }
+    }
+    
+    /* Floating message tooltip - subtle without background */
+    .chatbot-floating-message {
+      position: absolute;
+      bottom: 70px;
+      left: 0;
+      color: #333;
+      padding: 8px 12px;
+      font-size: 14px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      white-space: nowrap;
+      opacity: 0;
+      transform: translateY(10px);
+      pointer-events: none;
+      z-index: 3;
+      transition: opacity 0.4s ease, transform 0.4s ease;
+      text-shadow: 0 1px 2px rgba(255,255,255,0.8);
+      font-weight: 500;
+    }
+    
+    .chatbot-floating-message.show {
+      opacity: 1;
+      transform: translateY(0);
     }
     
     .chatbot-window {
@@ -363,12 +428,20 @@
         max-height: calc(100vh - 100px);
       }
       
-      .chatbot-button {
+      .chatbot-button-wrapper {
         bottom: 10px;
         left: 10px;
+      }
+      
+      .chatbot-button {
         width: 56px;
         height: 56px;
         font-size: 26px;
+      }
+      
+      .chatbot-pulse-ring {
+        width: 56px;
+        height: 56px;
       }
     }
   `;
@@ -394,6 +467,50 @@
           behavior: 'smooth'
         });
       }, 50);
+    }
+  }
+  
+  // ===== FLOATING MESSAGE FUNCTIONS =====
+  
+  function showFloatingMessage() {
+    // Don't show if chat is open
+    if (isOpen) return;
+    
+    const messageEl = document.querySelector('.chatbot-floating-message');
+    if (!messageEl) return;
+    
+    // Show message
+    messageEl.classList.add('show');
+    
+    // Hide after 3 seconds
+    setTimeout(() => {
+      messageEl.classList.remove('show');
+    }, 3000);
+  }
+  
+  function startFloatingMessageLoop() {
+    // Clear any existing interval
+    if (floatingMessageInterval) {
+      clearInterval(floatingMessageInterval);
+    }
+    
+    // Show message at random intervals between 6-10 seconds
+    function scheduleNext() {
+      const delay = Math.random() * 4000 + 6000; // 6000-10000ms (6-10 seconds)
+      floatingMessageInterval = setTimeout(() => {
+        showFloatingMessage();
+        scheduleNext();
+      }, delay);
+    }
+    
+    // Start the loop
+    scheduleNext();
+  }
+  
+  function stopFloatingMessageLoop() {
+    if (floatingMessageInterval) {
+      clearTimeout(floatingMessageInterval);
+      floatingMessageInterval = null;
     }
   }
   
@@ -697,9 +814,15 @@
   function toggleChat() {
     isOpen = !isOpen;
     const window = document.querySelector('.chatbot-window');
+    const floatingMessage = document.querySelector('.chatbot-floating-message');
     
     if (isOpen) {
       window.classList.add('open');
+      
+      // Hide floating message when chat opens
+      if (floatingMessage) {
+        floatingMessage.classList.remove('show');
+      }
       
       // Focus input if chat interface is loaded
       setTimeout(() => {
@@ -716,12 +839,32 @@
     const container = document.createElement('div');
     container.className = 'chatbot-container';
     
+    // Create button wrapper with pulse rings
+    const buttonWrapper = document.createElement('div');
+    buttonWrapper.className = 'chatbot-button-wrapper';
+    
+    // Create pulse rings
+    buttonWrapper.innerHTML = `
+      <div class="chatbot-pulse-ring"></div>
+      <div class="chatbot-pulse-ring"></div>
+      <div class="chatbot-pulse-ring"></div>
+    `;
+    
     // Create floating button
     const button = document.createElement('button');
     button.className = 'chatbot-button';
     button.innerHTML = '💬';
     button.setAttribute('aria-label', 'Open chat');
     button.onclick = toggleChat;
+    
+    // Create floating message tooltip
+    const floatingMessage = document.createElement('div');
+    floatingMessage.className = 'chatbot-floating-message';
+    floatingMessage.textContent = "I'm here 💬";
+    
+    // Add button and message to wrapper
+    buttonWrapper.appendChild(button);
+    buttonWrapper.appendChild(floatingMessage);
     
     // Create chat window
     const window = document.createElement('div');
@@ -739,7 +882,7 @@
     window.querySelector('.chatbot-close').onclick = toggleChat;
     
     // Append elements
-    container.appendChild(button);
+    container.appendChild(buttonWrapper);
     container.appendChild(window);
     document.body.appendChild(container);
     
@@ -749,6 +892,9 @@
     } else {
       initRegistrationForm();
     }
+    
+    // Start floating message loop
+    startFloatingMessageLoop();
   }
   
   // ===== INITIALIZATION =====
